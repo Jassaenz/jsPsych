@@ -10,7 +10,7 @@
  **/
 
 
-#testing testing test
+
 
 jsPsych.plugins["music-multi-image"] = (function() {
 
@@ -78,6 +78,12 @@ jsPsych.plugins["music-multi-image"] = (function() {
         pretty_name: 'Button to start sound',
         default: true,
         description: 'If true, requires button click for trial to start.'
+      },
+      cols_per_row: {
+        type: jsPsych.plugins.parameterType.INT,
+        pretty_name: 'Columns per row',
+        default: 4,
+        description: 'Number of images per row in the display grid (max 4, supports up to 16 total images).'
       }
     }
   }
@@ -89,23 +95,21 @@ jsPsych.plugins["music-multi-image"] = (function() {
     var audio;
 
     var facevalues = trial.images;
-    
-    var numbers = [0, 1, 2, 3];
+    var labels = 'ABCDEFGHIJKLMNOP'.split('');
+    var cols_per_row = Math.min(trial.cols_per_row || 4, 4);
+
+    var numbers = Array.from({length: facevalues.length}, function(_, i) { return i; });
     var randomnum = shuffle(numbers);
 
     var trial_data = {
         "sound": trial.stimulus.replace(/^.*[\\\/]/, ''),
         "picture": trial.images[0].replace(/^.*[\\\/]/, ''),
-        "A": facevalues[randomnum[0]].replace(/^.*[\\\/]/, ''),
-        "B": facevalues[randomnum[1]].replace(/^.*[\\\/]/, ''),
-        "C": facevalues[randomnum[2]].replace(/^.*[\\\/]/, ''),
-        "D": facevalues[randomnum[3]].replace(/^.*[\\\/]/, ''),
+        "response": null,
+        "rt": null,
       };
-
-    var response = {
-      rt: null,
-      key: null
-    };
+    for (var i = 0; i < facevalues.length; i++) {
+      trial_data[labels[i]] = facevalues[randomnum[i]].replace(/^.*[\\\/]/, '');
+    }
 
     // record webaudio context start time
     var startTime;
@@ -213,42 +217,66 @@ jsPsych.plugins["music-multi-image"] = (function() {
         }, trial.trial_duration);
       }
 
-      // display images in a row of a table
-      var html = '<table class="img-table"> <tr> <th>A</th> <th>B</th> <th>C</th> <th>D</th> </tr>';
+      // Build header rows, wrapping every cols_per_row
+      var html = '<table class="img-table">';
+      for (var i = 0; i < facevalues.length; i++) {
+        if (i % cols_per_row === 0) {
+          if (i > 0) html += '</tr>';
+          html += '<tr>';
+        }
+        html += '<th>' + labels[i] + '</th>';
+      }
+      html += '</tr>';
 
-      // Add image row
-      html += '<tr>';
-
-      for (var img=0; img < trial.images.length; img++){
+      // Add image rows, wrapping every cols_per_row
+      for (var img = 0; img < facevalues.length; img++) {
+        if (img % cols_per_row === 0) {
+          if (img > 0) html += '</tr>';
+          html += '<tr>';
+        }
         html += '<td>';
-        html += '<img src="'+facevalues[randomnum[img]]+'" style="';
-
-        if(trial.stimulus_height !== null){
-          html += 'height:'+trial.stimulus_height+'px; '
-          if(trial.stimulus_width == null && trial.maintain_aspect_ratio){
+        html += '<img src="' + facevalues[randomnum[img]] + '" style="';
+        if (trial.stimulus_height !== null) {
+          html += 'height:' + trial.stimulus_height + 'px; ';
+          if (trial.stimulus_width == null && trial.maintain_aspect_ratio) {
             html += 'width: auto; ';
           }
         }
-        if(trial.stimulus_width !== null){
-          html += 'width:'+trial.stimulus_width+'px; '
-          if(trial.stimulus_height == null && trial.maintain_aspect_ratio){
+        if (trial.stimulus_width !== null) {
+          html += 'width:' + trial.stimulus_width + 'px; ';
+          if (trial.stimulus_height == null && trial.maintain_aspect_ratio) {
             html += 'height: auto; ';
           }
         }
         html += '"></img>';
         html += '</td>';
       }
+      html += '</tr></table>';
 
-      html += '</tr>';
-      html += '</table>';
-          
       display_element.innerHTML = html;
 
-      if(trial.displayQuestionsAtStart) {
+      if (trial.displayQuestionsAtStart) {
         $("#questions").removeClass("d-none");
-        $("#questions .form-actions input").attr({'disabled':true})
+        $("#questions .form-actions input").attr({'disabled':true});
       }
-  
+
+      // Register keyboard response listener
+      if (trial.choices !== jsPsych.NO_KEYS) {
+        jsPsych.pluginAPI.getKeyboardResponse({
+          callback_function: function(info) {
+            trial_data['response'] = info.key;
+            trial_data['rt'] = info.rt;
+            if (trial.response_ends_trial) {
+              end_trial();
+            }
+          },
+          valid_responses: trial.choices,
+          rt_method: 'performance',
+          persist: false,
+          allow_held_key: false
+        });
+      }
+
     }
   };
 
